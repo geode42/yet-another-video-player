@@ -1,0 +1,14 @@
+# Yet Another Video Player
+
+A demo will hopefully be up at [yavp.geode42.com](https://yavp.geode42.com) soon
+
+I didn't like how other video players looked, so I made my own. It's loosely inspired by YouTube, Netflix, and probably all the other players I've seen.
+
+It isn't complete yet, but I thought I'd put it up anyways so everything isn't lost to the void of my projects folder lol
+
+This project uses Svelte 5 and Vite
+
+Attributions:
+- The demo uses JetBrains Mono, which is licensed under the [SIL Open Font License 1.1](https://openfontlicense.org/open-font-license-official-text/)
+- Icons from the Material Symbols library are licensed under the Apache License Version 2.0, a copy of which is in the same directory as the icons
+- The demo features Spring by the Blender Studio, which is licensed under the [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/) license
