@@ -3,7 +3,7 @@
 </script>
 
 {#snippet title()}
-    <strong>Spring</strong> <span style='color: #FFF8'>- Blender Open Movie</span>
+    <strong>Spring - Blender Open Movie</strong> <span style='color: #FFF8'>(CC) Blender Foundation | studio.blender.org</span>
 {/snippet}
 
 <main>
