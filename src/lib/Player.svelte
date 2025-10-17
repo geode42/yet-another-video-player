@@ -7,6 +7,7 @@
     import icon_volume_off from '../assets/material-symbols/volume_off_24dp_CURRENTCOLOR_FILL0_wght400_GRAD0_opsz24.svg?raw'
     import icon_closed_caption from '../assets/material-symbols/closed_caption_24dp_CURRENTCOLOR_FILL0_wght400_GRAD0_opsz24.svg?raw'
     import { VolumeController } from './VolumeController.svelte'
+    import type { SvelteMediaTimeRange } from 'svelte/elements'
 
     let { src, title, startFocused = false }: { src: string, title?: any, startFocused?: boolean } = $props()
 
@@ -23,6 +24,13 @@
     let volumeController = $state(new VolumeController(1))
     let currentTime = $state(0)
     let duration = $state(1)
+    let buffered: SvelteMediaTimeRange[] = $state([]) // all the times ranges the browser says are buffered
+    let bufferedDuration = $derived.by(() => {
+        const currentBuffer = buffered.find(b => b.start <= currentTime && currentTime <= b.end)
+        if (!currentBuffer) return 0
+        return currentBuffer.end - currentTime
+    }) // how many seconds immediately following the currentTime are buffered
+    let seekDistance = $state(0) // when hovering over the seek bar, any distance to the right of the scrubber upto the cursor gets highlighted, this is the length of that (as a percentage of duration from 0 to 1)
     let fullscreen = $state(false) // whether the player wants to be fullscreen
     let currentlyFullscreen = $state(false) // whether the player is currently fullscreen (can take a bit)
     let overlayVisible = $state(true) // Whether the GUI overlay is shown, resetOverlay() should be used to change this
@@ -165,6 +173,7 @@
         seekBarClickArea.addEventListener('pointerdown', e => {
             if (e.button != 0) return
 
+            seekDistance = 0 // reset seek distance if you're scrubbing (the scrubber gets teleported to where your cursor was)
             currentTime = calculateSeekBarTimeFromPosition(e.clientX)
 
             seekBarClickArea.setPointerCapture(e.pointerId)
@@ -173,7 +182,13 @@
         })
 
         seekBarClickArea.addEventListener('pointermove', e => {
-            if (!seekBarClickArea.hasPointerCapture(e.pointerId)) return
+            if (!seekBarClickArea.hasPointerCapture(e.pointerId)) {
+                // if you're not scrubbing, update the seek distance
+                seekDistance = (calculateSeekBarTimeFromPosition(e.clientX) - currentTime) / duration
+                return
+            }
+            // if you are scrubbing, reset it
+            seekDistance = 0
             if (e.buttons != 1) return
             getSelection()?.removeAllRanges()
             currentTime = calculateSeekBarTimeFromPosition(e.clientX)
@@ -225,14 +240,32 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="container" bind:this={containerElement} class:paused={paused} class:overlays-hidden={!overlayVisible} tabindex="0">
     <!-- svelte-ignore a11y_media_has_caption -->
-    <video {src} bind:paused={paused} bind:this={videoElement} bind:currentTime={currentTime}></video>
+    <video {src} bind:paused={paused} bind:this={videoElement} bind:currentTime={currentTime} bind:buffered={buffered}></video>
+
+    <!-- Goes above the video but behind the controls, makes them easier to see if the video's bright -->
+    <!-- TODO: test with really bright videos -->
+    <div class="overlay-shadow"></div>
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="controls-bar-stack" bind:this={controlsBarStack}>
         <div class="seek-bar" bind:this={seekBar} onmouseenter={() => overlayHovered.seekBar = true} onmouseleave={() => overlayHovered.seekBar = false}>
-            <div class="watched" style:width={`${currentTime / duration * 100}%`}></div>
-            <div class="scrubber"></div>
-            <div class="remaining"></div>
+            <!-- Bar segments make up the actual bar, and are arranged by flexbox end-to-end -->
+            <div class="bar-segments" style="display: contents">
+                <div class="watched" style:width={`${currentTime / duration * 100}%`}></div>
+                <div class="scrubber"></div>
+                <div class="buffered-remaining" style:width={`${bufferedDuration / duration * 100}%`}></div>
+                <div class="remaining"></div>
+            </div>
+
+            <!-- Bar overlays go over the bar segments from earlier and are absolutely positioned -->
+            <div class="bar-overlays" style="display: contents">
+                <!-- when hovering, this highlights the part of the bar from the scrubber to where your mouse is (on the right side of the scrubber) -->
+                <div class="seek-distance" style:left={`${currentTime / duration * 100}%`} style:width={`${seekDistance * 100}%`}></div>
+            </div>
+
+            <!-- areas -->
+            <!-- defines the region where you can hover/click/etc. to interact with the seek bar -->
+            <!-- note: the actual seekbar's width is used in the code to calculate durations based on where the mouse is inside of here, this just defines the region where it's tracked -->
             <div class="click-area" bind:this={seekBarClickArea}></div>
         </div>
         <div class="controls">
@@ -301,7 +334,9 @@
         position: relative;
         background: black;
         --overlay-color: #FFFC;
-        --seekbar-remaining-color: #FFF4;
+        --seekbar-buffered-remaining-color: #FFF5;
+        --seekbar-remaining-color: #FFF2;
+        --seekbar-seek-distance-overlay-color: #FFF4;
     }
     video {
         position: absolute;
@@ -311,6 +346,14 @@
         max-width: 100%;
         max-height: 100%;
         margin: auto;
+    }
+
+    .overlay-shadow {
+        position: absolute;
+        inset: 0;
+        top: unset;
+        height: 10rem;
+        background: linear-gradient(transparent, #0007 55%, #000A);
     }
 
     .controls-bar-stack {
@@ -358,6 +401,7 @@
 
     .seek-bar {
         --watched-height: 0.2rem;
+        --remaining-height: 0.15rem;
         --inline-margin: 1.5rem;
         width: calc(100% - 2 * var(--inline-margin));
         margin-inline: auto;
@@ -374,14 +418,24 @@
             background: red;
         }
 
-        .watched, .remaining {
+        :is(.bar-segments, .bar-overlays) > * {
             transition: height 100ms;
         }
 
         &:has(.click-area:hover) {
-            .watched, .remaining {
+            :is(.bar-segments, .bar-overlays) > * {
                 height: 0.32rem;
             }
+            .seek-distance {
+                display: initial;
+            }
+        }
+
+        .seek-distance {
+            display: none;
+            position: absolute;
+            height: var(--remaining-height);
+            background: var(--seekbar-seek-distance-overlay-color);
         }
 
         .click-area {
@@ -397,6 +451,8 @@
         .scrubber {
             width: 0;
             position: relative;
+            z-index: 999;
+            pointer-events: none;
 
             &::after {
                 content: '';
@@ -412,9 +468,14 @@
             }
         }
 
+        .buffered-remaining {
+            height: var(--remaining-height);
+            background: var(--seekbar-buffered-remaining-color);
+        }
+
         .remaining {
             flex-grow: 1;
-            height: 0.15rem;
+            height: var(--remaining-height);
             background: var(--seekbar-remaining-color);
         }
     }
@@ -455,10 +516,12 @@
     .time-container {
         font-size: 1.1rem;
         margin-right: 3rem;
+        user-select: none;
     }
 
     .title {
         font-size: 1.1rem;
+        cursor: default;
     }
     
     /* fix alignment for volume-down icon */
