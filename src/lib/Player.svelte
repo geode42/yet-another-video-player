@@ -105,6 +105,14 @@
             duration = videoElement.duration
         })
 
+        // Hide overlay if mouse cursor leaves the player (or if the event is otherwise fired)
+        containerElement.addEventListener('pointerleave', () => {
+            if (!paused) {
+                clearTimeout(overlayFadeoutTimeoutId)
+                overlayVisible = false
+            }
+        })
+
         // double clicks trigger on pointerup
         containerElement.addEventListener('pointerup', async e => {
             if (!(e.target == containerElement || e.target == videoElement)) return
