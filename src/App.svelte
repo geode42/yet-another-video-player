@@ -1,5 +1,5 @@
 <script lang="ts">
-    import Player from './lib/Player.svelte';
+    import Player from './lib/Player.svelte'
 </script>
 
 {#snippet title()}
@@ -7,7 +7,7 @@
 {/snippet}
 
 <main>
-    <Player src={'/Spring - Blender Open Movie.webm'} {title} />
+    <Player src='Spring - Blender Open Movie.webm' {title} startFocused />
 </main>
 
 <style>

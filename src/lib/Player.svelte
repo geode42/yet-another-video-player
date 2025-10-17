@@ -1,13 +1,16 @@
 <script lang='ts'>
-    import { onDestroy, onMount } from "svelte"
+    import { onDestroy, onMount } from 'svelte'
     import icon_play_arrow from '../assets/material-symbols/play_arrow_24dp_CURRENTCOLOR_FILL0_wght400_GRAD0_opsz24.svg?raw'
     import icon_pause from '../assets/material-symbols/pause_24dp_CURRENTCOLOR_FILL0_wght400_GRAD0_opsz24.svg?raw'
     import icon_volume_up from '../assets/material-symbols/volume_up_24dp_CURRENTCOLOR_FILL0_wght400_GRAD0_opsz24.svg?raw'
     import icon_volume_down from '../assets/material-symbols/volume_down_24dp_CURRENTCOLOR_FILL0_wght400_GRAD0_opsz24.svg?raw'
     import icon_volume_off from '../assets/material-symbols/volume_off_24dp_CURRENTCOLOR_FILL0_wght400_GRAD0_opsz24.svg?raw'
     import icon_closed_caption from '../assets/material-symbols/closed_caption_24dp_CURRENTCOLOR_FILL0_wght400_GRAD0_opsz24.svg?raw'
+    import { VolumeController } from './VolumeController.svelte'
 
-    let { src, title }: { src: string, title?: any } = $props()
+    let { src, title, startFocused = false }: { src: string, title?: any, startFocused?: boolean } = $props()
+
+    export const focus = () => containerElement.focus()
 
     let containerElement: HTMLDivElement
     let videoElement: HTMLVideoElement
@@ -17,8 +20,7 @@
     let volumeSlider: HTMLDivElement
 
     let paused = $state(true)
-    let volume = $state(1)
-    let muted = $state(false)
+    let volumeController = $state(new VolumeController(1))
     let currentTime = $state(0)
     let duration = $state(1)
     let fullscreen = $state(false)
@@ -30,7 +32,6 @@
     })
 
     // svelte-ignore state_referenced_locally
-    let nonMutedVolume = volume
     let resumeAfterSeeking = false // When you seek the video becomes paused and this variable is set to whether the video was playing. Then when you finish seeking, if this was set to true, it resumes
     let overlayFadeoutTimeoutId: number
     const overlayFadeoutDelay = 3000
@@ -42,29 +43,16 @@
     let previousClickToPlayTimestamp = NaN // The timestamp of the previous pointerup on the video, used to figure out whether the video paused state was toggled prematurely
     let lastDoubleClickToFullscreenTimestamp = NaN // The timestamp of the most recent double click on the video
 
+    // when using bind:volume svelte keeps calling the volume controller's volume setter when you toggle mute for some reason
+    // so this seems to have to be done manually to avoid that
     $effect(() => {
-        if (!muted) nonMutedVolume = volume
+        videoElement.volume = volumeController.volume
     })
-
-    function toggleMute() {
-        if (muted) {
-            muted = false
-            volume = nonMutedVolume
-            return
-        }
-        if (volume == 0) {
-            volume = 1
-            return
-        }
-        muted = true
-        volume = 0
-    }
 
     $effect(() => {
         // these tell svelte to react whenever these variables change
         paused
-        volume
-        muted
+        volumeController
         fullscreen
         overlayHovered
         resetOverlayVisibilityAndTimeout()
@@ -94,8 +82,9 @@
             ' ': () => paused = !paused,
             'k': () => paused = !paused,
             'f': () => fullscreen = !fullscreen,
-            'ArrowUp': () => volume = Math.min(1, volume + 0.05),
-            'ArrowDown': () => volume = Math.max(0, volume - 0.05),
+            'm': () => volumeController.toggleMute(),
+            'ArrowUp': () => volumeController.volume += 0.05,
+            'ArrowDown': () => volumeController.volume -= 0.05,
             'ArrowLeft': () => currentTime = Math.max(0, currentTime - 5),
             'ArrowRight': () => currentTime = Math.min(duration, currentTime + 5),
             'j': () => Math.max(0, currentTime - 10),
@@ -107,6 +96,7 @@
     }
 
     onMount(() => {
+        if (startFocused) containerElement.focus()
         // on yt clicking doesn't necessarily prevent the overlay from hiding, only mouse movement seems to universally be tracked. so i'm doing the same here
         // clicking on buttons will still update the vars the effect above is checking, so that's handled
         containerElement.addEventListener('pointermove', resetOverlayVisibilityAndTimeout)
@@ -178,13 +168,14 @@
 
         function calculateVolumeSliderValueFromPosition(x: number) {
             const volumeSliderRect = volumeSlider.getBoundingClientRect()
+            // the volume controller already clamps the volume, but whatevs
             return Math.max(0, Math.min(1, ((x - volumeSliderRect.x) / volumeSliderRect.width)))
         }
 
         volumeSlider.addEventListener('pointerdown', e => {
             if (e.button != 0) return
 
-            volume = calculateVolumeSliderValueFromPosition(e.clientX)
+            volumeController.volume = calculateVolumeSliderValueFromPosition(e.clientX)
             volumeSlider.setPointerCapture(e.pointerId)
         })
 
@@ -192,7 +183,7 @@
             if (!volumeSlider.hasPointerCapture(e.pointerId)) return
             if (e.buttons != 1) return
             getSelection()?.removeAllRanges()
-            volume = calculateVolumeSliderValueFromPosition(e.clientX)
+            volumeController.volume = calculateVolumeSliderValueFromPosition(e.clientX)
         })
     })
 
@@ -214,7 +205,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="container" bind:this={containerElement} class:paused={paused} class:overlays-hidden={!overlayVisible} tabindex="0">
     <!-- svelte-ignore a11y_media_has_caption -->
-    <video {src} bind:paused={paused} bind:this={videoElement} bind:currentTime={currentTime} bind:volume={volume}></video>
+    <video {src} bind:paused={paused} bind:this={videoElement} bind:currentTime={currentTime}></video>
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="controls-bar-stack" bind:this={controlsBarStack}>
@@ -234,15 +225,15 @@
                     {/if}
                 </button>
 
-                <button class='toggle-mute-button {(muted || !volume) ? 'muted' : volume > 0.5 ? 'high-volume' : 'low-volume'}' onclick={toggleMute}>
-                    {#if muted || !volume} {@html icon_volume_off}
-                    {:else if volume > 0.5} {@html icon_volume_up}
+                <button class='toggle-mute-button {volumeController.mute ? 'muted' : volumeController.volume > 0.5 ? 'high-volume' : 'low-volume'}' onclick={() => volumeController.toggleMute()}>
+                    {#if volumeController.mute} {@html icon_volume_off}
+                    {:else if volumeController.volume > 0.5} {@html icon_volume_up}
                     {:else} {@html icon_volume_down}
                     {/if}
                 </button>
                 <div class="volume-slider-wrapper">
                     <div class="volume-slider" bind:this={volumeSlider}>
-                        <div class="left" style:width={`${volume * 100}%`}></div>
+                        <div class="left" style:width={`${volumeController.volume * 100}%`}></div>
                         <div class="handle"></div>
                         <div class="right"></div>
                     </div>
