@@ -23,7 +23,8 @@
     let volumeController = $state(new VolumeController(1))
     let currentTime = $state(0)
     let duration = $state(1)
-    let fullscreen = $state(false)
+    let fullscreen = $state(false) // whether the player wants to be fullscreen
+    let currentlyFullscreen = $state(false) // whether the player is currently fullscreen (can take a bit)
     let overlayVisible = $state(true) // Whether the GUI overlay is shown, resetOverlay() should be used to change this
     let overlayHovered = $state({ // on yt hovering over empty space on the controls bar at the bottom doesn't prevent the overlay from fading out
         seekBar: false,
@@ -77,7 +78,7 @@
 
     function windowKeydownListener(e: KeyboardEvent) {
         if (!containerElement.contains(document.activeElement)) return
-        if (document.activeElement?.tagName == 'BUTTON') return
+        
         const keyBindings: Record<string, () => void> = {
             ' ': () => paused = !paused,
             'k': () => paused = !paused,
@@ -91,6 +92,13 @@
             'l': () => Math.min(duration, currentTime + 10),
         }
         if (e.key in keyBindings) {
+            if (document.activeElement?.tagName == 'BUTTON') {
+                // have the button take priority if it has a focus ring (e.g. if it was focused with tab)
+                if (document.activeElement.matches(':focus-visible')) return
+                // otherwise prevent space or whatnot from going to the button
+                e.preventDefault()
+            }
+
             keyBindings[e.key]()
         }
     }
@@ -111,6 +119,10 @@
                 clearTimeout(overlayFadeoutTimeoutId)
                 overlayVisible = false
             }
+        })
+
+        containerElement.addEventListener('fullscreenchange', () => {
+            currentlyFullscreen = document.fullscreenElement == containerElement
         })
 
         // double clicks trigger on pointerup
@@ -264,9 +276,10 @@
                 <button disabled>
                     {@html icon_closed_caption}
                 </button>
-                <button class="fullscreen-button" aria-label="Toggle fullscreen" onclick={() => fullscreen = !fullscreen}>
+                <!-- mirrors yt's fullscreen button focusing functionality -->
+                <button class="fullscreen-button" aria-label="Toggle fullscreen" onclick={() => (fullscreen = !fullscreen, containerElement.focus())}>
                     <!-- the svg's below are modified versions of 'Fullscreen' and 'Fullscreen Exit' from Material Symbols at 500 weight -->
-                    {#if fullscreen}
+                    {#if currentlyFullscreen}
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 -960 960 960"><path d="M315.22-315.22H157.37q-19.15 0-32.33-13.17-13.17-13.18-13.17-32.33t13.17-32.32q13.18-13.18 32.33-13.18h203.35q19.15 0 32.32 13.18 13.18 13.17 13.18 32.32v203.35q0 19.15-13.18 32.33-13.17 13.17-32.32 13.17t-32.33-13.17q-13.17-13.18-13.17-32.33zm329.8 0v157.85q0 19.15-13.17 32.33-13.18 13.17-32.33 13.17t-32.32-13.17q-13.18-13.18-13.18-32.33v-203.35q0-19.15 13.18-32.32 13.17-13.18 32.32-13.18h203.11q19.15 0 32.33 13.18 13.17 13.17 13.17 32.32t-13.17 32.33q-13.18 13.17-32.33 13.17zm-329.8-329.8v-157.61q0-19.15 13.17-32.33 13.18-13.17 32.33-13.17t32.32 13.17q13.18 13.18 13.18 32.33v203.11q0 19.15-13.18 32.32-13.17 13.18-32.32 13.18H157.37q-19.15 0-32.33-13.18-13.17-13.17-13.17-32.32t13.17-32.33q13.18-13.17 32.33-13.17zm329.8 0h157.61q19.15 0 32.33 13.17 13.17 13.18 13.17 32.33t-13.17 32.32q-13.18 13.18-32.33 13.18H599.52q-19.15 0-32.32-13.18-13.18-13.17-13.18-32.32v-203.11q0-19.15 13.18-32.33 13.17-13.17 32.32-13.17t32.33 13.17q13.17 13.18 13.17 32.33z"/></svg>
                     {:else}
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 -960 960 960"><path d="M202.87-202.87h157.85q19.15 0 32.32 13.17 13.18 13.18 13.18 32.33t-13.18 32.33q-13.17 13.17-32.32 13.17H157.37q-19.15 0-32.33-13.17-13.17-13.18-13.17-32.33v-203.35q0-19.15 13.17-32.32 13.18-13.18 32.33-13.18t32.33 13.18q13.17 13.17 13.17 32.32zm554.26 0v-157.85q0-19.15 13.17-32.32 13.18-13.18 32.33-13.18t32.33 13.18q13.17 13.17 13.17 32.32v203.35q0 19.15-13.17 32.33-13.18 13.17-32.33 13.17H599.52q-19.15 0-32.32-13.17-13.18-13.18-13.18-32.33t13.18-32.33q13.17-13.17 32.32-13.17zM202.87-757.13v157.61q0 19.15-13.17 32.32-13.18 13.18-32.33 13.18t-32.33-13.18q-13.17-13.17-13.17-32.32v-203.11q0-19.15 13.17-32.33 13.18-13.17 32.33-13.17h203.35q19.15 0 32.32 13.17 13.18 13.18 13.18 32.33t-13.18 32.33q-13.17 13.17-32.32 13.17zm554.26 0H599.52q-19.15 0-32.32-13.17-13.18-13.18-13.18-32.33t13.18-32.33q13.17-13.17 32.32-13.17h203.11q19.15 0 32.33 13.17 13.17 13.18 13.17 32.33v203.11q0 19.15-13.17 32.32-13.18 13.18-32.33 13.18T770.3-567.2q-13.17-13.17-13.17-32.32z"/></svg>
@@ -426,10 +439,17 @@
 
     .container .play-pause-button {
         font-size: 3rem;
+        padding-left: 1.7rem;
     }
 
     .container.paused .play-pause-button {
         font-size: 3.5rem;
+    }
+
+    /* increase specificity */
+    .fullscreen-button.fullscreen-button {
+        /* i think it being a little less than for the play-pause button looks better (it's not as important) */
+        padding-right: 1.5rem;
     }
 
     .time-container {
